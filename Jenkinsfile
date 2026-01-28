@@ -4,7 +4,10 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'master', url: 'git@github.com:Rogerprawin/devops-node-app.git'
+                // Use the SSH credential you added in Jenkins (e.g., git-new-key)
+                git branch: 'master', 
+                    url: 'git@github.com:Rogerprawin/devops-node-app.git',
+                    credentialsId: 'git-new-key'
             }
         }
 
