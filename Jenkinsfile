@@ -1,74 +1,99 @@
 pipeline {
-    agent any
+  agent any
 
-    environment {
-        IMAGE_NAME = "rogerprawin/devops-node-app"
-        IMAGE_TAG  = "latest"
-        DOCKER_CREDS = credentials('dockerhub-creds')
+  environment {
+    IMAGE_NAME = "rogerprawin/devops-node-app"
+    IMAGE_TAG  = "${BUILD_NUMBER}"
+  }
+
+  stages {
+
+    stage('Checkout Code') {
+      steps {
+        checkout scm
+      }
     }
 
-    stages {
-
-        stage('Checkout Code') {
-            steps {
-                git branch: 'master',
-                    url: 'git@github.com:Rogerprawin/devops-node-app.git',
-                    credentialsId: 'git-new-key'
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
-                sh 'npm install'
-            }
-        }
-
-        stage('Run Tests') {
-            steps {
-                sh 'npm test || echo "No tests found"'
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                sh '''
-                  docker build -t $IMAGE_NAME:$IMAGE_TAG .
-                '''
-            }
-        }
-
-        stage('Login to DockerHub') {
-            steps {
-                sh '''
-                  echo $DOCKER_CREDS_PSW | docker login -u $DOCKER_CREDS_USR --password-stdin
-                '''
-            }
-        }
-
-        stage('Push Image to DockerHub') {
-            steps {
-                sh '''
-                  docker push $IMAGE_NAME:$IMAGE_TAG
-                '''
-            }
-        }
-
-        stage('Deploy to Kubernetes') {
-            steps {
-                sh '''
-                  kubectl apply -f deployment.yaml
-                  kubectl apply -f service.yaml
-                '''
-            }
-        }
+    stage('Install Dependencies') {
+      steps {
+        sh 'npm install'
+      }
     }
 
-    post {
-        success {
-            echo '🚀 CI/CD Pipeline completed successfully!'
-        }
-        failure {
-            echo '❌ Pipeline failed'
-        }
+    stage('Run Tests (Non-blocking)') {
+      steps {
+        sh '''
+          npm test || echo "⚠️ No tests found – continuing"
+        '''
+      }
     }
+
+    stage('Build Docker Image') {
+      steps {
+        sh '''
+          docker build -t $IMAGE_NAME:$IMAGE_TAG .
+          docker tag $IMAGE_NAME:$IMAGE_TAG $IMAGE_NAME:latest
+        '''
+      }
+    }
+
+    stage('Login to DockerHub') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'dockerhub-creds',
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+        )]) {
+          sh '''
+            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+          '''
+        }
+      }
+    }
+
+    stage('Push Image to DockerHub') {
+      steps {
+        sh '''
+          docker push $IMAGE_NAME:$IMAGE_TAG
+          docker push $IMAGE_NAME:latest
+        '''
+      }
+    }
+
+    stage('Deploy to Kubernetes') {
+      steps {
+        sh '''
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+        '''
+      }
+    }
+
+    stage('Verify Rollout') {
+      steps {
+        sh '''
+          kubectl rollout status deployment/devops-node-app --timeout=60s
+        '''
+      }
+    }
+
+    stage('Health Check') {
+      steps {
+        sh '''
+          NODE_PORT=$(kubectl get svc devops-node-app-service \
+            -o jsonpath='{.spec.ports[0].nodePort}')
+          curl -f http://$(minikube ip):$NODE_PORT/health
+        '''
+      }
+    }
+  }
+
+  post {
+    success {
+      echo '✅ Pipeline completed successfully'
+    }
+    failure {
+      echo '❌ Pipeline failed'
+    }
+  }
 }
