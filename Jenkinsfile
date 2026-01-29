@@ -78,14 +78,18 @@ pipeline {
     }
 
     stage('Health Check') {
-      steps {
+    steps {
         sh '''
-          NODE_PORT=$(kubectl get svc devops-node-app-service \
-            -o jsonpath='{.spec.ports[0].nodePort}')
-          curl -f http://$(minikube ip):$NODE_PORT/health
+        NODE_PORT=$(kubectl get svc devops-node-app-service \
+          -o jsonpath='{.spec.ports[0].nodePort}')
+
+        echo "Checking health on NodePort: $NODE_PORT"
+
+        curl -f http://localhost:$NODE_PORT/health
         '''
       }
     }
+
   }
 
   post {
