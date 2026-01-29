@@ -80,15 +80,22 @@ pipeline {
     stage('Health Check') {
     steps {
         sh '''
-        NODE_PORT=$(kubectl get svc devops-node-app-service \
-          -o jsonpath='{.spec.ports[0].nodePort}')
+        echo "Starting port-forward..."
 
-        echo "Checking health on NodePort: $NODE_PORT"
+        kubectl port-forward svc/devops-node-app-service 18080:3000 &
+        PF_PID=$!
 
-        curl -f http://localhost:$NODE_PORT/health
+        sleep 5
+
+        echo "Running health check..."
+        curl -f http://localhost:18080/health
+
+        echo "Stopping port-forward"
+        kill $PF_PID
         '''
       }
     }
+
 
   }
 
