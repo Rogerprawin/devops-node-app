@@ -1,11 +1,17 @@
 pipeline {
     agent any
 
+    environment {
+        IMAGE_NAME = "rogerprawin/devops-node-app"
+        IMAGE_TAG  = "latest"
+        DOCKER_CREDS = credentials('dockerhub-creds')
+    }
+
     stages {
-        stage('Checkout') {
+
+        stage('Checkout Code') {
             steps {
-                // Use the SSH credential you added in Jenkins (e.g., git-new-key)
-                git branch: 'master', 
+                git branch: 'master',
                     url: 'git@github.com:Rogerprawin/devops-node-app.git',
                     credentialsId: 'git-new-key'
             }
@@ -25,15 +31,33 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t devops-node-app:latest .'
+                sh '''
+                  docker build -t $IMAGE_NAME:$IMAGE_TAG .
+                '''
             }
         }
 
-        stage('Run Docker Container') {
+        stage('Login to DockerHub') {
             steps {
                 sh '''
-                docker rm -f node-app || true
-                docker run -d -p 3000:3000 --name node-app devops-node-app:latest
+                  echo $DOCKER_CREDS_PSW | docker login -u $DOCKER_CREDS_USR --password-stdin
+                '''
+            }
+        }
+
+        stage('Push Image to DockerHub') {
+            steps {
+                sh '''
+                  docker push $IMAGE_NAME:$IMAGE_TAG
+                '''
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh '''
+                  kubectl apply -f deployment.yaml
+                  kubectl apply -f service.yaml
                 '''
             }
         }
@@ -41,10 +65,10 @@ pipeline {
 
     post {
         success {
-            echo 'Pipeline finished successfully!'
+            echo '🚀 CI/CD Pipeline completed successfully!'
         }
         failure {
-            echo 'Pipeline failed 😢'
+            echo '❌ Pipeline failed'
         }
     }
 }
